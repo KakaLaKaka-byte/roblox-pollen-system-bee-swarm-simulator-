@@ -1,0 +1,57 @@
+--!strict
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Shared = ReplicatedStorage:WaitForChild("Shared")
+local CharacterUtils = require(Shared:WaitForChild("CharacterUtils"):: ModuleScript)
+
+local tsunami = {}
+
+type TsunamiType = "slow" | "normal" | "fast" | "extreme"
+
+local SpeedMap = {
+	slow = 5,
+	normal = 15,
+	fast = 30, 
+	extreme = 60,
+}
+
+local ColorMap = {
+    slow = Color3.fromRGB(96, 255, 146),
+    normal = Color3.fromRGB(0, 166, 255),
+    fast = Color3.fromRGB(255, 0, 0),
+    extreme = Color3.fromRGB(153, 0, 255)
+}
+
+local function SetSpeed(type: TsunamiType): number
+	return SpeedMap[type]
+end
+
+function tsunami.CreateTsunami(type: TsunamiType, size: Vector3, position: Vector3)
+	local speed = SetSpeed(type)
+	if not speed then
+		error("Invalid tsunami type: " .. tostring(type))
+	end
+
+	local wave = Instance.new("Part")
+	wave.Size = size
+	wave.Position = position
+	wave.Anchored = false
+	wave.CanCollide = true
+	wave.Color = ColorMap[type]
+	wave.Material = Enum.Material.Water
+	wave.Name = "Tsunami"
+	wave.Parent = workspace
+
+	local bodyVelocity = Instance.new("BodyVelocity")
+	bodyVelocity.Velocity = Vector3.new(0, 0, speed) 
+	bodyVelocity.MaxForce = Vector3.new(1e5, 1e5, 1e5)
+	bodyVelocity.Parent = wave
+end
+
+function tsunami.OnTsunamiTouched(wave: Part, callback: (Humanoid?, Part) -> ())
+    if not wave then return end
+       wave.Touched:Connect(function(otherPart)
+            local hum: Humanoid = CharacterUtils.GetHumanoidFromPart(otherPart)
+            callback(hum, otherPart :: Part)
+        end)
+end
+return tsunami
