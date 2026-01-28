@@ -1,0 +1,129 @@
+local RS = game:GetService("RunService")
+local Flower = {}
+Flower.__index = Flower
+
+local DEFAULT_REGEN_PER_SECOND = 1
+
+local function clamp(n, a, b)
+	return math.max(a, math.min(b, n))
+end
+
+local function lerp(a, b, t)
+	return a + (b - a) * t
+end
+
+local function lerpColor(a, b, t)
+	return Color3.new(lerp(a.R, b.R, t), lerp(a.G, b.G, t), lerp(a.B, b.B, t))
+end
+
+function Flower.new(tier, position, opts)
+	tier = clamp(math.floor(tier or 1), 1, 5)
+	local self = setmetatable({}, Flower)
+	self.Tier = tier
+	self.Position = position
+	self._maxPerSub = BASE_POLLEN[tier]
+	self.Max = 10
+	self.Current = self.Max
+	self.Part = nil
+	self._initialSize = nil
+	self._depletedColor = Color3.fromRGB(120, 70, 20)
+	self._fullColor = Color3.fromRGB(255, 200, 50)
+	self._regenPerSecond = (opts and opts.regenPerSecond) or DEFAULT_REGEN_PER_SECOND
+	self._regenRunning = false
+	self._regenTask = nil
+	task.defer(function() self:StartRegen() end)
+	return self
+end
+
+function Flower:GetMaxPollen()
+	return self.Max
+end
+
+function Flower:GetRemainingPollen()
+	return self.Current
+end
+
+function Flower:IsDepleted()
+	return self.Current <= 0
+end
+
+function Flower:TakePollen(amount)
+	amount = math.max(0, amount or 0)
+	local wanted = amount * self.Tier
+	local taken = math.min(wanted, self.Current)
+	self:SetPollen(self.Current - taken)
+	local breakdown = {}
+	if taken > 0 then table.insert(breakdown, {index = 1, taken = taken}) end
+	return taken, breakdown
+end
+
+function Flower:Refill(amount, index)
+	if amount == "full" then
+		self:SetPollen(self.Max)
+		return
+	end
+	amount = math.max(0, amount or 0)
+	self:SetPollen(math.min(self.Max, self.Current + amount))
+end
+
+function Flower:StartRegen(perSub)
+	if self._regenRunning then return end
+	self._regenRunning = true
+	local regen = perSub or self._regenPerSecond
+	local perTick = regen
+	self._regenTask = task.spawn(function()
+		while self._regenRunning do
+			task.wait(1)
+			if self.Current < self.Max then
+				self:SetPollen(math.min(self.Max, self.Current + perTick))
+			end
+		end
+	end)
+end
+
+function Flower:AttachPart(part)
+	if not part then return end
+	self.Part = part
+	self._initialSize = part.Size
+	self:UpdateVisual()
+end
+
+function Flower:UpdateVisual()
+	if not self.Part or not self._initialSize then return end
+	local pct = 0
+	if self.Max > 0 then pct = clamp(self.Current / self.Max, 0, 1) end
+	local minFactor = 0.25
+	local yScale = minFactor + (1 - minFactor) * pct
+	local newY = math.max(0.05, self._initialSize.Y * yScale)
+	local size = Vector3.new(self._initialSize.X, newY, self._initialSize.Z)
+	local oldCenter = self.Part.Position
+	local bottomY = oldCenter.Y - (self._initialSize.Y / 2)
+	local newCenterY = oldCenter.Y - (newY / 2)
+	self.Part.Size = size
+	self.Part.Color = lerpColor(self._depletedColor, self._fullColor, pct)
+end
+
+function Flower:SetPollen(value)
+	value = math.max(0, value or 0)
+	local newVal = math.min(self.Max, value)
+	self.Current = newVal
+	if self.Part then
+		self:UpdateVisual()
+	end
+	return newVal
+end
+
+function Flower:StopRegen()
+	self._regenRunning = false
+	self._regenTask = nil
+end
+
+function Flower:Clone()
+	return Flower.new(self.Tier, self.Position, {regenPerSecond = self._regenPerSecond})
+end
+
+function Flower:__tostring()
+	return ("Flower(tier=%d, pos=%s, remaining=%d)"):format(self.Tier, tostring(self.Position), self:GetRemainingPollen())
+end
+
+return Flower
